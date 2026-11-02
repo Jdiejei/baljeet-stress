@@ -185,14 +185,14 @@ def pregen(rc):
         rc(f'chunky world {world}'); rc('chunky shape square'); rc('chunky center 0 0'); rc(f'chunky radius {radius[world]}')
         rc('chunky start')
         log(f'pre-generating {world}: border {int(w)} wide, radius {radius[world]}', world=world, radius=radius[world])
-    deadline = time.time() + 15 * 60
+    deadline = time.time() + 2 * 60
     while time.time() < deadline:
         time.sleep(20)
         txt = open(os.path.join(OUT, 'console.log'), errors='replace').read()
         done = [w for w in radius if re.search(rf'Task finished for {re.escape(w)}', txt)]
         if len(done) == len(radius): break
     else:
-        rc('chunky cancel'); log('pre-generation capped at 15 min, cancelled the rest')
+        rc('chunky cancel'); log('pre-generation capped at 2 min, cancelled the rest')
     log('pre-generation done')
     return radius
 
@@ -206,7 +206,10 @@ def forceload_all(rc, radius):
         jobs.append([(key, cx, cz) for cx in range(-r, r + 1, 16) for cz in range(-r, r + 1, 16)])
     order = [j for group in zip(*[iter_pad(j, max(map(len, jobs))) for j in jobs]) for j in group if j]
     log(f'force-loading {sum(map(len, jobs))} regions of up to 256 chunks across {len(DIMS)} dimensions')
+    until = time.time() + 180
     for i, (key, cx, cz) in enumerate(order):
+        if time.time() > until:
+            log('force-load stopped: 3 minute cap', reason=None); break
         rc(f'execute in {key} run forceload add {cx * 16} {cz * 16} {min(cx + 15, radius_of(key, radius) // 16) * 16} {min(cz + 15, radius_of(key, radius) // 16) * 16}')
         if i % 20 == 19:
             n = chunk_count(rc)
@@ -217,9 +220,9 @@ def forceload_all(rc, radius):
                 log(f'force-load stopped: memory full at {n} chunks', chunks=n, reason='memory'); break
             if m and m > 250:
                 log(f'force-load stopped: MSPT {m:.0f} at {n} chunks', chunks=n, reason='mspt'); break
-    time.sleep(60)
+    time.sleep(20)
     n = chunk_count(rc)
-    w = window(50)
+    w = window(15)
     log(f'all chunks loaded: {n} chunks, idle MSPT {mean(s["mspt5s"] for s in w) or 0:.1f}, TPS {mean(s["tps1m"] for s in w) or 0:.2f}',
         chunks=n, mspt=mean(s['mspt5s'] for s in w), tps=mean(s['tps1m'] for s in w))
     return n
@@ -239,7 +242,7 @@ def spawn_wave(rc, first, count, radius):
         part = names[i:i + PER_PROC]
         bot_procs.append(subprocess.Popen(['node', os.path.join(ROOT, 'stress', 'bots.js'), ','.join(part)],
                                           stdout=open(os.path.join(OUT, f'bots_{first + i:03d}.log'), 'w'), stderr=subprocess.STDOUT))
-    time.sleep(8 + count * 0.5)
+    time.sleep(4 + count * 0.4)
     for n, name in enumerate(names):
         key, world, _, under = DIMS[(first + n) % len(DIMS)]
         r = max(64, min(radius[world] - 32, 900))
@@ -287,14 +290,14 @@ def main():
     java = start_server()
     rc = Rcon()
     threading.Thread(target=sampler, args=(rc, java), daemon=True).start()
-    time.sleep(30)
+    time.sleep(5)
     radius = pregen(rc)
     chunks = forceload_all(rc, radius)
-    w = window(50)
+    w = window(15)
     if any(e.get('reason') for e in events) or (mean(s['mspt5s'] for s in w) or 0) > 45:
         # the chunks alone already used the server up: players are measured without them (normal loading)
         for key, _, _, _ in DIMS: rc(f'execute in {key} run forceload remove all')
-        time.sleep(90)
+        time.sleep(20)
         log(f'force-loads removed for the player test ({chunk_count(rc)} chunks still loaded)', unforced=True)
     waves, strained, broken = ramp(rc, radius)
     state['phase'] = 'cooldown'

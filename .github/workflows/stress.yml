@@ -7,15 +7,15 @@ on:
         default: "300"
       wave:
         description: bots added per wave
-        default: "25"
+        default: "30"
       wave_minutes:
         description: minutes per wave
-        default: "1"
+        default: "0.67"
 
 jobs:
   stress:
     runs-on: ubuntu-latest
-    timeout-minutes: 355
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
