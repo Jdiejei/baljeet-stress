@@ -7,10 +7,10 @@ on:
         default: "300"
       wave:
         description: bots added per wave
-        default: "10"
+        default: "25"
       wave_minutes:
         description: minutes per wave
-        default: "3"
+        default: "1"
 
 jobs:
   stress:

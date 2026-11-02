@@ -185,14 +185,14 @@ def pregen(rc):
         rc(f'chunky world {world}'); rc('chunky shape square'); rc('chunky center 0 0'); rc(f'chunky radius {radius[world]}')
         rc('chunky start')
         log(f'pre-generating {world}: border {int(w)} wide, radius {radius[world]}', world=world, radius=radius[world])
-    deadline = time.time() + 75 * 60
+    deadline = time.time() + 15 * 60
     while time.time() < deadline:
         time.sleep(20)
         txt = open(os.path.join(OUT, 'console.log'), errors='replace').read()
         done = [w for w in radius if re.search(rf'Task finished for {re.escape(w)}', txt)]
         if len(done) == len(radius): break
     else:
-        rc('chunky cancel'); log('pre-generation capped at 75 min, cancelled the rest')
+        rc('chunky cancel'); log('pre-generation capped at 15 min, cancelled the rest')
     log('pre-generation done')
     return radius
 
