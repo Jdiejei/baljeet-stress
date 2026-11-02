@@ -28,7 +28,7 @@ jobs:
             gh release download payload -p 'server.zip.enc' -D enc
             openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:PASS -in enc/server.zip.enc -out enc/server.zip
             unzip -q enc/server.zip -d . && mv BaljeetVaults_Server srv
-            cd srv && sed -i 's/^online-mode=.*/online-mode=false/; s/^enforce-whitelist=.*/enforce-whitelist=false/; s/^white-list=.*/white-list=false/; s/^max-players=.*/max-players=60/' server.properties && echo eula=true > eula.txt
+            ( cd srv && sed -i 's/^online-mode=.*/online-mode=false/; s/^enforce-whitelist=.*/enforce-whitelist=false/; s/^white-list=.*/white-list=false/; s/^max-players=.*/max-players=60/' server.properties && echo eula=true > eula.txt )
             echo "fresh from the package"
           fi
           mkdir src && tar xzf enc/source.tgz -C src && rm -rf enc
