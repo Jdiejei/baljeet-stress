@@ -13,8 +13,8 @@ START = time.time()
 # (dimension key, Bukkit world name, chunky radius cap, spreadplayers "under" height or None)
 DIMS = [('minecraft:vault_map', 'vault_map', 2000, None),
         ('the_sift:the_sift', 'world_the_sift_the_sift', 2000, 150),
-        ('minecraft:the_nether', 'world_nether', 1000, 120),
-        ('minecraft:the_end', 'world_the_end', 1000, None)]
+        ('minecraft:the_nether', 'world_nether', 240, 120),
+        ('minecraft:the_end', 'world_the_end', 240, None)]
 os.makedirs(OUT, exist_ok=True)
 events = []
 
@@ -185,14 +185,14 @@ def pregen(rc):
         rc(f'chunky world {world}'); rc('chunky shape square'); rc('chunky center 0 0'); rc(f'chunky radius {radius[world]}')
         rc('chunky start')
         log(f'pre-generating {world}: border {int(w)} wide, radius {radius[world]}', world=world, radius=radius[world])
-    deadline = time.time() + 2 * 60
+    deadline = time.time() + 3 * 60
     while time.time() < deadline:
         time.sleep(20)
         txt = open(os.path.join(OUT, 'console.log'), errors='replace').read()
         done = [w for w in radius if re.search(rf'Task finished for {re.escape(w)}', txt)]
         if len(done) == len(radius): break
     else:
-        rc('chunky cancel'); log('pre-generation capped at 2 min, cancelled the rest')
+        rc('chunky cancel'); log('pre-generation capped at 3 min, cancelled the rest')
     log('pre-generation done')
     return radius
 
@@ -218,8 +218,6 @@ def forceload_all(rc, radius):
             heap = samples[-1]['heap_used'] if samples else None
             if (heap and heap > 0.92 * 11 * 2 ** 30) or (avail and avail < 1.2 * 2 ** 30) or state.get('dead'):
                 log(f'force-load stopped: memory full at {n} chunks', chunks=n, reason='memory'); break
-            if m and m > 250:
-                log(f'force-load stopped: MSPT {m:.0f} at {n} chunks', chunks=n, reason='mspt'); break
     time.sleep(20)
     n = chunk_count(rc)
     w = window(15)
@@ -245,7 +243,7 @@ def spawn_wave(rc, first, count, radius):
     time.sleep(4 + count * 0.4)
     for n, name in enumerate(names):
         key, world, _, under = DIMS[(first + n) % len(DIMS)]
-        r = max(64, min(radius[world] - 32, 900))
+        r = max(48, min(radius[world] - 48, 900))
         rc(f'gamemode survival {name}')
         rc(f'effect give {name} resistance infinite 4 true'); rc(f'effect give {name} saturation infinite 0 true')
         rc(f'effect give {name} fire_resistance infinite 0 true'); rc(f'effect give {name} water_breathing infinite 0 true')
