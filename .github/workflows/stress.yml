@@ -1,0 +1,72 @@
+name: stress
+on:
+  workflow_dispatch:
+    inputs:
+      max_players:
+        description: most player bots to ramp to
+        default: "300"
+      wave:
+        description: bots added per wave
+        default: "10"
+      wave_minutes:
+        description: minutes per wave
+        default: "3"
+
+jobs:
+  stress:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Machine
+        run: |
+          { echo "## Machine"; echo '```'; lscpu | grep -E 'Model name|^CPU\(s\)|Thread|MHz'; free -h; df -h / | tail -1; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"
+          mkdir -p out && { nproc; free -b | awk '/Mem:/{print $2}'; lscpu | sed -n 's/Model name: *//p'; } > out/machine.txt
+
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "25" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - name: Bot client
+        run: cd stress && npm install --no-audit --no-fund mineflayer@4 >/dev/null && node -e "console.log('mineflayer', require('mineflayer/package.json').version)"
+
+      - name: Server files (encrypted release assets)
+        env: { GH_TOKEN: "${{ github.token }}", PASS: "${{ secrets.PAYLOAD_PASS }}" }
+        run: |
+          gh release download payload -p '*.enc' -D enc
+          for f in enc/*.enc; do openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:PASS -in "$f" -out "${f%.enc}"; done
+          unzip -q "enc/server.zip" -d . && mv BaljeetVaults_Server srv
+          mkdir src && tar xzf enc/source.tgz -C src
+          rm -rf enc
+
+      - name: Build the plugin (current source, with the v13 pack inside)
+        run: |
+          cd src/vault-smp
+          rm -rf resourcepack && mkdir resourcepack && unzip -q ../../srv/resourcepack/vaultsmp-pack.zip -d resourcepack
+          chmod +x gradlew
+          if ./gradlew --no-daemon -q build > ../../out/build.log 2>&1; then echo "build+tests ok" | tee ../../out/build_status.txt
+          else echo "tests failed or build failed, retrying without tests" | tee ../../out/build_status.txt; ./gradlew --no-daemon -q assemble >> ../../out/build.log 2>&1; fi
+          cp build/libs/VaultSMP-1.0.0.jar ../../srv/plugins/VaultSMP-1.0.0.jar
+          ls -la ../../srv/plugins
+
+      - name: Stress test
+        env:
+          MAX_PLAYERS: ${{ inputs.max_players }}
+          WAVE: ${{ inputs.wave }}
+          WAVE_MINUTES: ${{ inputs.wave_minutes }}
+        run: python3 stress/run.py
+
+      - name: Graphs
+        if: always()
+        run: pip install -q matplotlib && python3 stress/plot.py out || true
+
+      - name: Results
+        if: always()
+        run: |
+          cp srv/logs/latest.log out/latest.log 2>/dev/null || true
+          cp srv/gc.log out/gc.log 2>/dev/null || true
+          cat out/summary.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: results, path: out, retention-days: 30 }
