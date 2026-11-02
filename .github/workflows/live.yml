@@ -1,0 +1,60 @@
+name: live
+# The live server: runs ~5h45m on a 4 vCPU / 16 GB runner, reachable at the Dubai relay (139.185.60.30:25565)
+# through a reverse SSH tunnel, then saves the world (encrypted release asset) and starts the next run.
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: write
+concurrency: { group: live, cancel-in-progress: false }
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    env: { GH_TOKEN: "${{ github.token }}", GH_REPO: "${{ github.repository }}", PASS: "${{ secrets.PAYLOAD_PASS }}" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "25" }
+      - name: Server (saved world if there is one)
+        run: |
+          gh release download payload -p 'source.tgz.enc' -D enc
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:PASS -in enc/source.tgz.enc -out enc/source.tgz
+          if gh release download live -p 'srv.tgz.enc' -D enc 2>/dev/null; then
+            openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:PASS -in enc/srv.tgz.enc | tar xzf -
+            echo "restored saved world"
+          else
+            gh release download payload -p 'server.zip.enc' -D enc
+            openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:PASS -in enc/server.zip.enc -out enc/server.zip
+            unzip -q enc/server.zip -d . && mv BaljeetVaults_Server srv
+            cd srv && sed -i 's/^online-mode=.*/online-mode=false/; s/^enforce-whitelist=.*/enforce-whitelist=false/; s/^white-list=.*/white-list=false/; s/^max-players=.*/max-players=60/' server.properties && echo eula=true > eula.txt
+            echo "fresh from the package"
+          fi
+          mkdir src && tar xzf enc/source.tgz -C src && rm -rf enc
+      - name: Build the plugin
+        run: |
+          cd src/vault-smp && rm -rf resourcepack && mkdir resourcepack && unzip -q ../../srv/resourcepack/vaultsmp-pack.zip -d resourcepack
+          chmod +x gradlew && ./gradlew --no-daemon -q assemble && cp build/libs/VaultSMP-1.0.0.jar ../../srv/plugins/VaultSMP-1.0.0.jar
+      - name: Run
+        env: { RELAY_KEY: "${{ secrets.RELAY_KEY }}" }
+        run: |
+          umask 077; echo "$RELAY_KEY" > relay_key
+          ( while true; do ssh -i relay_key -N -o StrictHostKeyChecking=no -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes \
+              -R 0.0.0.0:25565:localhost:25565 ubuntu@139.185.60.30; sleep 5; done ) > tunnel.log 2>&1 &
+          cd srv
+          mkfifo console
+          ( sleep 20400; echo "say Server restarting in 1 minute (about 3 minutes down)" ; sleep 60; echo stop; sleep 600 ) > console &
+          java -Xms10G -Xmx10G -XX:+UseG1GC -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMillis=200 -XX:+UnlockExperimentalVMOptions \
+            -XX:+DisableExplicitGC -XX:G1NewSizePercent=30 -XX:G1MaxNewSizePercent=40 -XX:G1HeapRegionSize=8M -XX:G1ReservePercent=20 \
+            -XX:InitiatingHeapOccupancyPercent=15 -jar paper.jar --nogui < console > ../server.out 2>&1 || true
+          grep -E "Done \(|Stopping" ../server.out | head -3
+      - name: Save the world and start the next run
+        if: always()
+        run: |
+          [ -d srv/world ] || exit 0
+          rm -rf srv/cache srv/libraries srv/versions srv/logs
+          tar czf - srv | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass env:PASS -out srv.tgz.enc
+          gh release view live >/dev/null 2>&1 || gh release create live --title live --notes "Encrypted live world." --latest=false
+          gh release upload live srv.tgz.enc --clobber && echo saved
+          [ -f stop-live ] || gh workflow run live.yml
