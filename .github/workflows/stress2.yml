@@ -14,7 +14,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Machine
-        run: mkdir -p out && { nproc; free -b | awk '/Mem:/{print $2}'; lscpu | sed -n 's/Model name: *//p'; } | tee out/machine.txt
+        run: |
+          mkdir -p out && { nproc; free -b | awk '/Mem:/{print $2}'; lscpu | sed -n 's/Model name: *//p'; } | tee out/machine.txt
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: "25" }
       - name: Server files and tunnel tool
