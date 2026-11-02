@@ -1,0 +1,67 @@
+name: stress-2machines
+on:
+  workflow_dispatch:
+    inputs:
+      max_players: { description: most players to ramp to, default: "400" }
+permissions:
+  contents: write
+
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env: { GH_TOKEN: "${{ github.token }}", GH_REPO: "${{ github.repository }}" }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Machine
+        run: mkdir -p out && { nproc; free -b | awk '/Mem:/{print $2}'; lscpu | sed -n 's/Model name: *//p'; } | tee out/machine.txt
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "25" }
+      - name: Server files and tunnel tool
+        env: { PASS: "${{ secrets.PAYLOAD_PASS }}" }
+        run: |
+          gh release download payload -p '*.enc' -D enc
+          for f in enc/*.enc; do openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:PASS -in "$f" -out "${f%.enc}"; done
+          unzip -q enc/server.zip -d . && mv BaljeetVaults_Server srv && mkdir src && tar xzf enc/source.tgz -C src && rm -rf enc
+          curl -sL -o cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 && chmod +x cloudflared
+      - name: Build the plugin
+        run: |
+          cd src/vault-smp && rm -rf resourcepack && mkdir resourcepack && unzip -q ../../srv/resourcepack/vaultsmp-pack.zip -d resourcepack
+          chmod +x gradlew && ./gradlew --no-daemon -q assemble > ../../out/build.log 2>&1
+          cp build/libs/VaultSMP-1.0.0.jar ../../srv/plugins/VaultSMP-1.0.0.jar
+      - name: Server under load
+        env: { MAX_PLAYERS: "${{ inputs.max_players }}" }
+        run: python3 stress/run2.py
+      - name: Graphs
+        if: always()
+        run: pip install -q matplotlib && python3 stress/plot.py out || true
+      - name: Results
+        if: always()
+        run: |
+          cp srv/logs/latest.log srv/gc.log out/ 2>/dev/null || true
+          cat out/summary.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: server-results, path: out, retention-days: 30 }
+
+  bots:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      matrix: { prefix: [A, B] }
+    env: { GH_TOKEN: "${{ github.token }}", GH_REPO: "${{ github.repository }}" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - name: Bot client and tunnel tool
+        run: |
+          cd stress && npm install --no-audit --no-fund mineflayer@4 >/dev/null && cd ..
+          curl -sL -o cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 && chmod +x cloudflared
+          nproc; free -h
+      - name: Player bots
+        env: { PREFIX: "${{ matrix.prefix }}", WAVE: "15", WAVE_S: "40", CAP: "200", VD: "12" }
+        run: python3 stress/ramp.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: "bots-${{ matrix.prefix }}", path: out, retention-days: 30 }

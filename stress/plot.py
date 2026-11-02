@@ -42,7 +42,7 @@ fig.tight_layout(); fig.savefig(os.path.join(out, 'timeline.png'), dpi=110)
 W = json.load(open(os.path.join(out, 'waves.json'))) if os.path.exists(os.path.join(out, 'waves.json')) else []
 if W:
     fig, ax = plt.subplots(figsize=(10, 5))
-    b = [w['bots'] for w in W]
+    b = [w.get('bots', w.get('online')) for w in W]
     ax.plot(b, [w['mspt'] for w in W], 'o-', color='#d9480f', label='MSPT avg')
     ax.plot(b, [w['mspt_peak'] for w in W], 'x:', color='#d9480f', alpha=0.5, label='MSPT peak')
     ax.axhline(50, color='k', ls='--', lw=0.8)

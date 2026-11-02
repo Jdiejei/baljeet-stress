@@ -8,8 +8,8 @@ const pick = a => a[Math.floor(Math.random() * a.length)];
 const chance = p => Math.random() < p;
 
 function start(name, attempt = 0) {
-  const bot = mineflayer.createBot({ host: '127.0.0.1', port: 25565, username: name, version: '1.21.11', auth: 'offline',
-                                     viewDistance: 8, checkTimeoutInterval: 90000 });
+  const bot = mineflayer.createBot({ host: process.env.MC_HOST || '127.0.0.1', port: +(process.env.MC_PORT || 25565), username: name, version: '1.21.11', auth: 'offline',
+                                     viewDistance: +(process.env.MC_VD || 8), checkTimeoutInterval: 90000 });
   let timer = null;
   bot.once('spawn', () => {
     console.log(`${Date.now()} ${name} joined`);
